@@ -1,0 +1,515 @@
+// Cutter HMI Test
+//Troy Williams
+//6-28-2018
+// Install Azande Studio: https://zeijlonsystems.se/products/azande/specification/DownloadandInstallAzandeStudio.html
+//Include Necessary Libaries
+#include <Controllino.h>
+#include <Azande.h>
+
+//Define Necessary Variables
+int BatchSize = 0;
+int BatchCounter = 0;
+int TotalQuantityVal = 0;
+long TotalCount = 0;
+int MotorSpeedVal = 500;
+float LengthVal = 0;
+float LengthOffsetVal = 0;
+long PreTime;
+long CurrentTime;
+long NumberOfSteps;
+volatile long encoder = 0;
+long DeltaTime;
+float RealLength = 0;
+unsigned long CurrentMicros;
+unsigned long PreviousMicros;
+int StopSignal = 0;
+int SwitchStatus = 0;
+int RevSignal = 0;
+float AccelSlope = 0;
+
+//Define Necessary Pins
+int DirectionPin = CONTROLLINO_DO5;
+int StepPin = CONTROLLINO_DO4;
+int RollerPin = CONTROLLINO_DO2;
+int CutterPin = CONTROLLINO_DO3;
+int LowerPrefeederSwitch = CONTROLLINO_AI0;
+int UpperPrefeederSwitch = CONTROLLINO_AI1;
+int MotorEnablePin = CONTROLLINO_DO6;
+int PrefeederPin = CONTROLLINO_R0; //turn prefeeder on and off
+
+//Encoder Setup
+// Red - 24V
+// Black - GND
+const int encoder_a = CONTROLLINO_IN0;// Green - pin IN0 - Digital 4.7K PULLUP RESISTORS
+const int encoder_b = CONTROLLINO_IN1; // White - pin IN1 - Digital 4.7K PULLL UP RESISTORS
+
+//Motor Information
+long AccelerationLength;    //Length of Acceleration/Deceleration
+long UpperAccelerationLimit;
+int DelayTiming;
+int pulseWidthMicros;    //Signal Delay Timings
+float TopSpeed;        //Timing During Top Speed  Min Currently 58
+int AccelerationFactor;  //Larger Equals Slower Acceleration
+int DecelerationFactor;  //Larger equals longer Deceleration
+int SignChanger;
+int MotorSpeed = 500;
+
+
+//Azande Infomration
+#include <Azande.h>
+// Azande Feature Macros for  Batch Size
+define_int_command(   cmdBatchSize,     "Set Batch Size",    SetBatchSize,               2, "pcs", , );
+define_double_event(     eventBatchSize,   "Set Batch Size",                          4, "pcs" , , , );
+// Azande Feature Macros for  Total Quantity
+define_int_command(   cmdTotalQuantity,   "Set Total Quantity",  SetTotalQuantity,             2, "pcs" , , );
+define_double_event(     eventTotalQuantity, "Set Total Quantity",                        4, "pcs" , , , );
+//Azande Feature Macros for Motor Speed
+define_int_command(   cmdMotorSpeed,    "Set Motor Speed %",   SetSpeed,              5, , 0, 100);
+define_int_event(     eventMotorSpeed,  "Motor Speed %",                         5, , 0, 100, );
+//Azande Feature Buttons
+define_void_command(cmdStart, "Run Batch", RunBatch, 1);
+define_void_command(cmdStop, "Stop", StopFeeder, 1);
+define_void_command(cmdSingle, "Single Piece", Single, 1);
+define_void_command(cmdCut, "Cut", Cut, 1);
+define_void_command(cmdJogFwd, "JogFWD", JogFWD, 1);
+define_void_command(cmdJogBwd, "JogBWD", JogBwd, 1);
+define_void_command(cmdMoveRollers, "Open/Close Feed Rollers", MoveRollers, 1);
+define_void_command(cmdResetTotalCount, "Reset Total Count", ResetTotalCount, 1);
+define_void_command(cmdResetBatchCount, "Reset Batch Count", ResetBatchCount, 1);
+
+
+
+//Azande Feature for Length
+define_double_command( cmdLength, "Set Length", SetLength, 2, "in", 0.000, 300.000);
+define_double_event(     eventLength,  "Set Length",                         4, "in" , , , "F3");
+//Azande Feature for Length Offset
+define_double_command( cmdLengthOffset, "Set Length Offset", SetLengthOffset, 2, "in", -3.000, 3.000);
+define_double_event(     eventLengthOffset,  "Set Length Adjustment",                         4, "in" , , , "F3" );
+//Azande Feature for Current Quantities
+define_int_event(     eventBatchCount,  "Current Batch Count", 6, "pcs" , , , "d");
+define_int_event(     eventTotalCount,  "Current Total Count", 6, "pcs" , , , "d");
+
+define_double_event(     eventEncoder,  "Encoder",                         7, "cts" , , ,);
+define_double_event(     eventNumberOfSteps,  "Number Of Steps",                         7, "cts" , , ,);
+//Running Indicator
+define_bool_event(eventRunningIndicator, "Machine Status", 0, "Running", "Stopped");
+
+
+Azande azande;    // The Azande object variable. 'Serial' is default used 'Stream'.
+
+void setup()
+{
+  Serial.begin(19200);
+  digitalWrite(CutterPin, LOW);
+  digitalWrite(RollerPin, LOW);
+  pinMode(DirectionPin, OUTPUT);
+  pinMode(StepPin, OUTPUT);
+  pinMode(encoder_a, INPUT);
+  pinMode(encoder_b, INPUT);
+  pinMode(RollerPin, OUTPUT);
+  pinMode(CutterPin, OUTPUT);
+  pinMode(PrefeederPin, OUTPUT);
+  pinMode(LowerPrefeederSwitch, INPUT_PULLUP);
+  pinMode(UpperPrefeederSwitch, INPUT_PULLUP);
+  delay(50);
+  attachInterrupt(digitalPinToInterrupt(encoder_a), encoderPinChangeA, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoder_b), encoderPinChangeB, CHANGE);
+  // digitalWrite(RollerPin, HIGH);
+
+  azande.begin();
+  // Add features to be visible on Azande Studio.
+  azande.add(eventRunningIndicator);
+  azande.add(cmdStart);
+  azande.add(cmdStop);
+  azande.add(cmdSingle);
+  azande.add(cmdCut);
+  azande.add(cmdMoveRollers);
+  azande.add(cmdJogFwd);
+  azande.add(cmdJogBwd);
+  azande.add(cmdLength);
+  azande.add(cmdBatchSize);
+  azande.add(cmdTotalQuantity);
+  azande.add(cmdMotorSpeed);
+  azande.add(cmdLengthOffset);
+  azande.add(cmdResetTotalCount);
+  azande.add(cmdResetBatchCount);
+
+  azande.add(eventEncoder);
+  azande.add(eventNumberOfSteps);
+
+  azande.add(eventLength);
+  azande.add(eventLengthOffset);
+  azande.add(eventBatchSize);
+  azande.add(eventTotalQuantity);
+
+  azande.add(eventBatchCount);
+  azande.add(eventTotalCount);
+  azande.add(eventMotorSpeed);
+
+  azande.send(eventBatchCount, 0);
+  azande.send(eventTotalCount, 0);
+  azande.send(eventLength, 0);
+  azande.send(eventBatchSize, 0);
+  azande.send(eventLengthOffset, 0);
+
+}
+
+void loop() {
+  azande.send(eventEncoder, encoder);
+  azande.send(eventRunningIndicator, LOW);
+  delay(50);
+  CheckPrefeeder();
+  StopSignal = 0;
+  azande.readStream(); // Let Azande handle the new data.
+}
+
+void Single() {
+  azande.send(eventRunningIndicator, HIGH);
+  CalculateNumberOfSteps();
+  encoder = 0;
+  NumberOfSteps = abs(NumberOfSteps);
+  RunMotor();
+  delay(100);
+  CheckPosition();
+  Cut();
+}
+
+void CheckPrefeeder() {
+  if (digitalRead(LowerPrefeederSwitch) == HIGH) { //indicates a low status
+    digitalWrite(PrefeederPin, HIGH);
+  }
+  else {
+    digitalWrite(PrefeederPin, LOW);
+  }
+  if (digitalRead(UpperPrefeederSwitch) == HIGH) {
+    digitalWrite(RollerPin, HIGH);
+    StopSignal = 1;
+  }
+}
+
+
+void RunBatch() {
+  if (TotalCount >= TotalQuantityVal) {}
+  else {
+    azande.send(eventRunningIndicator, HIGH);
+    CalculateNumberOfSteps();
+
+    if (BatchCounter == BatchSize || BatchCounter > BatchSize) {
+      ResetBatchCount();
+    }
+
+    for (BatchCounter; BatchCounter < BatchSize;) {
+      encoder = 0;
+      NumberOfSteps = abs(NumberOfSteps);
+      RunMotor();
+      delay(100);
+      //CheckPosition();
+      azande.readStream();
+      Cut();
+      IncrementAndSendCounters();
+      if (TotalCount >= TotalQuantityVal || StopSignal == 1) {
+        break;
+      }
+    }
+  }
+}
+
+void Cut() {
+  azande.send(eventRunningIndicator, HIGH);
+  digitalWrite(CutterPin, HIGH);
+  delay(180);
+  digitalWrite(CutterPin, LOW);
+  delay(200);
+  azande.send(eventEncoder, encoder);
+}
+
+void StopFeeder() {
+  StopSignal = 1;
+}
+
+void ResetTotalCount() {
+  TotalCount = 0;
+  azande.send(eventTotalCount, TotalCount);
+}
+
+void IncrementAndSendCounters() {
+  BatchCounter = BatchCounter + 1;
+  TotalCount = TotalCount + 1;
+  azande.send(eventTotalCount, TotalCount);
+  azande.send(eventBatchCount, BatchCounter);
+
+}
+
+void ResetBatchCount() {
+  BatchCounter = 0;
+  azande.send(eventBatchCount, BatchCounter);
+
+}
+
+
+void JogFWD() {
+  azande.send(eventRunningIndicator, HIGH);
+  digitalWrite(DirectionPin, HIGH);
+  long x = 0;
+  while (x < 1200) {
+    if (abs(CurrentMicros - PreviousMicros) >= (MotorSpeed * 3)) {
+      digitalWrite(StepPin, HIGH);
+      digitalWrite(StepPin, LOW);
+      PreviousMicros = micros();
+      x = x + 1;
+    }
+    CurrentMicros = micros();
+  }
+
+}
+
+
+void JogBwd() {
+  azande.send(eventRunningIndicator, HIGH);
+  digitalWrite(DirectionPin, LOW);
+  long x = 0;
+  while (x < 1200) {
+    if (abs(CurrentMicros - PreviousMicros) >= (MotorSpeed * 3)) {
+      digitalWrite(StepPin, HIGH);
+      digitalWrite(StepPin, LOW);
+      PreviousMicros = micros();
+      x = x + 1;
+    }
+    CurrentMicros = micros();
+  }
+}
+
+void MoveRollers() {
+  azande.send(eventRunningIndicator, HIGH);
+  digitalWrite(RollerPin, !digitalRead(RollerPin));
+  delay(250);
+}
+
+void TakeStep() {
+  long EncoderDifference = NumberOfSteps - encoder - 6;
+
+  if (encoder <= 500) {
+    int CalculateDelayTime = 1000000 / (800 * AccelSlope * encoder + 166.66);
+    if (abs(CurrentMicros - PreviousMicros) >= CalculateDelayTime) {
+      digitalWrite(StepPin, HIGH);
+      digitalWrite(StepPin, LOW);
+      PreviousMicros = micros();
+    }
+  }
+  else if (EncoderDifference <= 500) {
+    int CalculateDelayTime = 1000000 / (800 * AccelSlope * EncoderDifference + 166.66);
+    if (abs(CurrentMicros - PreviousMicros) >= CalculateDelayTime) {
+      digitalWrite(StepPin, HIGH);
+      digitalWrite(StepPin, LOW);
+      PreviousMicros = micros();
+    }
+  }
+  else {
+    if (abs(CurrentMicros - PreviousMicros) >= MotorSpeed) {
+      digitalWrite(StepPin, HIGH);
+      digitalWrite(StepPin, LOW);
+      PreviousMicros = micros();
+    }
+  }
+  CurrentMicros = micros();
+  CheckPrefeeder();
+}
+
+void CheckPosition() {
+
+  long pretime = micros();
+  if (StopSignal == 1) {}
+
+  else {
+    long EncoderDifference = NumberOfSteps - encoder;
+
+    while (abs(EncoderDifference) > 3) {
+      azande.readStream();
+      if (StopSignal == 1) {
+        break;
+      }
+      if (EncoderDifference <= -1) {
+        RevSignal = 1;
+        DetermineDirection();
+      }
+      else if (EncoderDifference >= 0) {
+        RevSignal = 0;
+        DetermineDirection();
+      }
+
+      if (abs(EncoderDifference) > 150) {
+        if (abs(micros() - pretime) > 500) {
+          digitalWrite(StepPin, HIGH);
+          digitalWrite(StepPin, LOW);
+          pretime = micros();
+        }
+      }
+      else if (50 < abs(EncoderDifference) && abs(EncoderDifference) <= 150) {
+        if (abs(micros() - pretime) > 30000) {
+          digitalWrite(StepPin, HIGH);
+          digitalWrite(StepPin, LOW);
+          pretime = micros();
+        }
+      }
+      else if (50 <= abs(EncoderDifference) && abs(EncoderDifference) <= 3) {
+        if (abs(micros() - pretime) > 50000) {
+          digitalWrite(StepPin, HIGH);
+          digitalWrite(StepPin, LOW);
+          pretime = micros();
+        }
+      }
+
+      else if (abs(EncoderDifference < 3)) {}
+
+      EncoderDifference = NumberOfSteps - encoder;
+
+    }
+  }
+}
+void DetermineDirection() {
+  if (RevSignal == -1) {
+    digitalWrite(DirectionPin, HIGH);
+  }
+  else {
+    digitalWrite(DirectionPin, LOW);
+  }
+}
+
+void RunMotor() {
+  while (encoder <= NumberOfSteps) {
+    long PreEncoder;
+    CurrentTime = millis();
+    //Check if the wire is stuck
+    if (StopSignal == 1) {
+      break;
+    }
+    if (abs(CurrentTime - PreTime) > 600) {
+      if ((encoder - PreEncoder) == 0) {
+        StopSignal = 1;
+        break;
+      }
+      PreTime = CurrentTime;
+      PreEncoder = encoder;
+    }
+
+
+    if (encoder > NumberOfSteps) {
+      digitalWrite(DirectionPin, LOW);
+      TakeStep();
+    }
+    if (encoder < NumberOfSteps) {
+      digitalWrite(DirectionPin, HIGH);
+      TakeStep();
+    }
+  }
+}
+
+void CalculateNumberOfSteps() {
+  float StepperDistancePerStep = (.0013210434); //Approximate distance per step  @2400/rev
+  NumberOfSteps = RealLength / StepperDistancePerStep; //Calculate Number of Steps
+  long NumberOfStepsPlusOne = NumberOfSteps + 1;
+  if (abs(RealLength - (NumberOfSteps * (StepperDistancePerStep)) > (abs(RealLength - (NumberOfStepsPlusOne * (StepperDistancePerStep)))))) {
+    NumberOfSteps = NumberOfStepsPlusOne;  }  //Find if NumberofStepsPlusOne is actually closer than NumberOfSteps, if so reassign
+    azande.send(eventNumberOfSteps, NumberOfSteps);
+}
+
+
+// GOOD STUFF BELOW
+
+void encoderPinChangeA() {
+  encoder += digitalRead(encoder_a) == digitalRead(encoder_b) ? 1 : -1;
+
+}
+
+void encoderPinChangeB() {
+  encoder += digitalRead(encoder_a) != digitalRead(encoder_b) ? 1 : -1;
+}
+
+void SetSpeed(long value) {
+  // make sure within range 0-100%
+  if (value < 0)
+  {
+    MotorSpeedVal = 0;
+  }
+  else if (value > 100)
+  {
+    MotorSpeedVal = 100;
+  }
+  else
+  {
+    MotorSpeedVal = value;
+  }
+  MotorSpeed = map(MotorSpeedVal, 0, 100, 1000, 58);
+  AccelSlope = (1000000 - 166.66 * MotorSpeed) / (400000 * MotorSpeed);
+  azande.send(eventMotorSpeed, MotorSpeedVal);
+}
+
+void SetLengthOffset(double value) {
+  // make sure within range 0-1000
+  if (value < -3)
+  {
+    LengthOffsetVal = -3;
+  }
+  else if (value > 3)
+  {
+    LengthOffsetVal = 3;
+  }
+  else
+  {
+    LengthOffsetVal = value;
+  }
+  RealLength = LengthVal + LengthOffsetVal;
+  azande.send(eventLengthOffset, LengthOffsetVal);
+}
+
+void SetLength(double value) {
+  // make sure within range 0-1000
+  if (value < 0)
+  {
+    LengthVal = 0;
+  }
+  else if (value > 300)
+  {
+    LengthVal = 300;
+  }
+  else
+  {
+    LengthVal = value;
+  }
+  RealLength = LengthVal + LengthOffsetVal;
+  azande.send(eventLength, LengthVal);
+}
+
+
+void SetTotalQuantity(long value) {
+  // make sure within range 0-5000
+  if (value < 0)
+  {
+    TotalQuantityVal = 0;
+  }
+  else if (value > 5000)
+  {
+    TotalQuantityVal = 5000;
+  }
+  else
+  {
+    TotalQuantityVal = value;
+  }
+  azande.send(eventTotalQuantity, TotalQuantityVal);
+}
+
+void SetBatchSize(long value) {
+  if (value < 0)
+  {
+    BatchSize = 0;
+  }
+  else if (value > 100)
+  {
+    BatchSize = 100;
+  }
+  else
+  {
+    BatchSize = value;
+  }
+  azande.send(eventBatchSize, BatchSize);
+}
