@@ -286,10 +286,10 @@ void MoveRollers() {
 }
 
 void TakeStep() {
-  long EncoderDifference = NumberOfSteps - encoder;
+  long EncoderDifference = NumberOfSteps - encoder - 6;
 
   if (encoder <= 500) {
-    unsigned int CalculateDelayTime = 1000000 / (800 * AccelSlope * encoder + 166.66);
+    int CalculateDelayTime = 1000000 / (800 * AccelSlope * encoder + 166.66);
     if (abs(CurrentMicros - PreviousMicros) >= CalculateDelayTime) {
       digitalWrite(StepPin, HIGH);
       digitalWrite(StepPin, LOW);
@@ -297,7 +297,7 @@ void TakeStep() {
     }
   }
   else if (EncoderDifference <= 500) {
-    unsigned int CalculateDelayTime = 1000000 / (800 * AccelSlope * EncoderDifference + 166.66);
+    int CalculateDelayTime = 1000000 / (800 * AccelSlope * EncoderDifference + 166.66);
     if (abs(CurrentMicros - PreviousMicros) >= CalculateDelayTime) {
       digitalWrite(StepPin, HIGH);
       digitalWrite(StepPin, LOW);
@@ -329,11 +329,11 @@ void CheckPosition() {
         break;
       }
       if (EncoderDifference <= -1) {
-        RevSignal = -1;
+        RevSignal = 1;
         DetermineDirection();
       }
       else if (EncoderDifference >= 0) {
-        RevSignal = 1;
+        RevSignal = 0;
         DetermineDirection();
       }
 
@@ -344,32 +344,34 @@ void CheckPosition() {
           pretime = micros();
         }
       }
-      else if (abs(EncoderDifference) <= 150 && abs(EncoderDifference) > 50) {
+      else if (50 < abs(EncoderDifference) && abs(EncoderDifference) <= 150) {
         if (abs(micros() - pretime) > 30000) {
           digitalWrite(StepPin, HIGH);
           digitalWrite(StepPin, LOW);
           pretime = micros();
         }
       }
-      else if (abs(EncoderDifference) <= 50 && abs(EncoderDifference) >= 3) {
+      else if (50 <= abs(EncoderDifference) && abs(EncoderDifference) <= 3) {
         if (abs(micros() - pretime) > 50000) {
           digitalWrite(StepPin, HIGH);
           digitalWrite(StepPin, LOW);
           pretime = micros();
         }
       }
+
+      else if (abs(EncoderDifference < 3)) {}
+
       EncoderDifference = NumberOfSteps - encoder;
 
     }
   }
 }
-
 void DetermineDirection() {
   if (RevSignal == -1) {
-    digitalWrite(DirectionPin, LOW);
+    digitalWrite(DirectionPin, HIGH);
   }
   else {
-    digitalWrite(DirectionPin, HIGH);
+    digitalWrite(DirectionPin, LOW);
   }
 }
 
