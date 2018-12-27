@@ -189,27 +189,31 @@ void CheckPrefeeder() {
 
 
 void RunBatch() {
-  if (TotalCount >= TotalQuantityVal) {}
-  else {
-    azande.send(eventRunningIndicator, HIGH);
-    CalculateNumberOfSteps();
+  if (TotalCount >= TotalQuantityVal) {
+    return;
+  }
+  
+  azande.send(eventRunningIndicator, HIGH);
+  CalculateNumberOfSteps();
 
-    if (BatchCounter == BatchSize || BatchCounter > BatchSize) {
-      ResetBatchCount();
-    }
+  if (BatchCounter >= BatchSize) {
+    ResetBatchCount();
+  }
 
-    for (BatchCounter; BatchCounter < BatchSize;) {
-      encoder = 0;
-      NumberOfSteps = abs(NumberOfSteps);
-      RunMotor();
-      delay(100);
-      //CheckPosition();
-      azande.readStream();
-      Cut();
-      IncrementAndSendCounters();
-      if (TotalCount >= TotalQuantityVal || StopSignal == 1) {
-        break;
-      }
+  for (BatchCounter; BatchCounter < BatchSize; BatchCounter++) {
+    encoder = 0;
+    NumberOfSteps = abs(NumberOfSteps);
+    RunMotor();
+    delay(100);
+    //CheckPosition();
+    azande.readStream();
+    Cut();
+    TotalCount = TotalCount + 1;
+    azande.send(eventTotalCount, TotalCount);
+    azande.send(eventBatchCount, BatchCounter);
+  
+    if (TotalCount >= TotalQuantityVal || StopSignal == 1) {
+      break;
     }
   }
 }
@@ -230,14 +234,6 @@ void StopFeeder() {
 void ResetTotalCount() {
   TotalCount = 0;
   azande.send(eventTotalCount, TotalCount);
-}
-
-void IncrementAndSendCounters() {
-  BatchCounter = BatchCounter + 1;
-  TotalCount = TotalCount + 1;
-  azande.send(eventTotalCount, TotalCount);
-  azande.send(eventBatchCount, BatchCounter);
-
 }
 
 void ResetBatchCount() {
