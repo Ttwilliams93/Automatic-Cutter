@@ -1,6 +1,6 @@
 // Cutter HMI Test
 //Troy Williams
-//6-28-2018
+//1-15-2019
 // Install Azande Studio: https://zeijlonsystems.se/products/azande/specification/DownloadandInstallAzandeStudio.html
 //Include Necessary Libaries
 #include <Controllino.h>
@@ -111,7 +111,7 @@ void setup()
   pinMode(PrefeederPin, OUTPUT);
   pinMode(LowerPrefeederSwitch, INPUT_PULLUP);
   pinMode(UpperPrefeederSwitch, INPUT_PULLUP);
-  delay(50);
+  Delay(50);
   attachInterrupt(digitalPinToInterrupt(encoder_a), encoderPinChangeA, CHANGE);
   attachInterrupt(digitalPinToInterrupt(encoder_b), encoderPinChangeB, CHANGE);
   // digitalWrite(RollerPin, HIGH);
@@ -157,7 +157,7 @@ void setup()
 void loop() {
   azande.send(eventEncoder, encoder);
   azande.send(eventRunningIndicator, LOW);
-  delay(50);
+  Delay(50);
   CheckPrefeeder();
   StopSignal = 0;
   azande.readStream(); // Let Azande handle the new data.
@@ -169,7 +169,7 @@ void Single() {
   encoder = 0;
   NumberOfSteps = abs(NumberOfSteps);
   RunMotor();
-  delay(100);
+  Delay(100);
   CheckPosition();
   Cut();
 }
@@ -204,7 +204,7 @@ void RunBatch() {
     encoder = 0;
     NumberOfSteps = abs(NumberOfSteps);
     RunMotor();
-    delay(100);
+    Delay(100);
     //CheckPosition();
     azande.readStream();
     Cut();
@@ -221,9 +221,9 @@ void RunBatch() {
 void Cut() {
   azande.send(eventRunningIndicator, HIGH);
   digitalWrite(CutterPin, HIGH);
-  delay(180);
+  Delay(180);
   digitalWrite(CutterPin, LOW);
-  delay(200);
+  Delay(200);
   azande.send(eventEncoder, encoder);
 }
 
@@ -278,7 +278,7 @@ void JogBwd() {
 void MoveRollers() {
   azande.send(eventRunningIndicator, HIGH);
   digitalWrite(RollerPin, !digitalRead(RollerPin));
-  delay(250);
+  Delay(250);
 }
 
 void TakeStep() {
@@ -355,7 +355,7 @@ void CheckPosition() {
         }
       }
 
-      else if (abs(EncoderDifference < 3)) {}
+      else if (abs(EncoderDifference < 2)) {}
 
       EncoderDifference = NumberOfSteps - encoder;
 
@@ -420,6 +420,13 @@ void encoderPinChangeA() {
 
 void encoderPinChangeB() {
   encoder += digitalRead(encoder_a) != digitalRead(encoder_b) ? 1 : -1;
+}
+
+void Delay(unsigned long DelayTime) {
+  unsigned long PreviousMillis = millis();
+  while ((unsigned long)(millis() - PreviousMillis) < DelayTime) {
+    //Delay for passed through time
+  }
 }
 
 void SetSpeed(long value) {
