@@ -282,7 +282,7 @@ void MoveRollers() {
 }
 
 void TakeStep() {
-  long EncoderDifference = NumberOfSteps - encoder - 6;
+  long EncoderDifference = NumberOfSteps - encoder;
 
   if (encoder <= 500) {
     int CalculateDelayTime = 1000000 / (800 * AccelSlope * encoder + 166.66);
@@ -319,7 +319,7 @@ void CheckPosition() {
   else {
     long EncoderDifference = NumberOfSteps - encoder;
 
-    while (abs(EncoderDifference) > 3) {
+    while (abs(EncoderDifference) > 2) {
       azande.readStream();
       if (StopSignal == 1) {
         break;
